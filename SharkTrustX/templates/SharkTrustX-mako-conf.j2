@@ -1,0 +1,45 @@
+apps = {
+   { name='', path='SharkTrustX.zip'},
+}
+
+tracelogger = { auth=true }
+realm="{{ realm }}"
+
+users = { 
+   ["{{ rootuser }}"]={ "{{ rootuserha1.stdout }}" }
+}
+
+fileserver={
+   fsname="fs",
+   ioname="home",
+   path="",
+   lockdir=".LOCK"
+}
+
+
+log={
+   logerr = true,
+   signature="{{ emailsignature }}",
+   smtp={
+      subject="{{ emailsubject }}",
+      from = "{{ emailfrom }}",
+      to = "{{ emailto }}",
+      server = "{{ emailserver }}",
+      port = {{ emailport }},
+      useauth = true,
+      consec = "{{ emailport }}",
+      user = "{{ emailuser }}",
+      password = "{{ emailpassword }}",
+   }
+}
+
+
+settings={
+   ns1="{{ settingsns1 }}",
+   ns2="{{ settingsns2 }}",
+   dn="{{ settingsdn }}",
+   acme={
+      production=true,
+      rsa=true
+   }
+}

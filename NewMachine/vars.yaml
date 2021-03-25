@@ -1,0 +1,7 @@
+
+---
+
+# The user created on the online server
+
+onlineuser: rtl
+ansible_user: root

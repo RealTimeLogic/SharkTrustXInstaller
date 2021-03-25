@@ -1,0 +1,13 @@
+[Unit]
+Description=Mako Server : SharkTrustX
+After=syslog.target network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/SharkTrustX
+ExecStart=/usr/bin/mako -s
+
+[Install]
+WantedBy=multi-user.target

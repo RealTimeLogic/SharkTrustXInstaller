@@ -1,0 +1,33 @@
+
+
+---
+
+#The username should be the same as 'onlineuser' set in ../NewMachine/vars.yaml
+ansible_user: rtl
+
+# The portal owner and password
+rootuser: "admin"
+rootpwd: "qwerty"
+# password stored as HA1 = MD5(username ":" realm ":" password)
+realm: "SharkTrust Service"
+
+# SharkTrustX name server settings
+settingsns1: "nsex1.realtimelogic.com"
+settingsns2: "nsex2.realtimelogic.com"
+settingsdn: "sharktrustx.realtimelogic.com"
+
+# Log E-Mail settings
+emailserver: "your-mail-server"
+emailport: 465
+# tls or starttls
+emailconsec: "tls"
+emailuser: "no-reply@realtimelogic.com"
+emailpassword: "password"
+emailsubject: "SharkTrustX Server"
+emailfrom: "no-reply@realtimelogic.com"
+emailto: "log-file-receiver"
+emailsignature: "Sent from SharkTrustX"
+
+# The SharkTrustX repository (or cloned repository)
+GitSharkTrustX: https://github.com/RealTimeLogic/SharkTrustX.git
+

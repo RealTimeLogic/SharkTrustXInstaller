@@ -1,0 +1,113 @@
+---
+- hosts: all
+  become: true
+
+  vars_files:
+    - vars.yaml
+
+  pre_tasks:
+    - name: Update apt cache if needed.
+      apt: update_cache=true cache_valid_time=3600
+
+  handlers:
+    - name: restart SharkTrustX
+      service: name=SharkTrustX state=restarted
+
+  tasks:
+    - name: Install all required packages
+      apt:
+        update_cache: yes
+        pkg:
+        - curl
+        - bind9
+        - whois
+        - lsof
+        - git
+        - nano
+
+    - name: Create /opt/SharkTrustX/
+      file:
+        path: /opt/SharkTrustX/
+        state: directory
+      register: SharkTrustXCreated
+
+    # Used  by Jinja template SharkTrustX-mako-conf.j2
+    - name: "Create HA1 = MD5({{ rootuser }} : {{ realm }} : rootpwd)"
+      shell:
+         "printf '%s:{{ realm }}:%s' '{{ rootuser }}' '{{ rootpwd }}' | md5sum | cut -d ' ' -f 1"
+      register: rootuserha1
+      when: SharkTrustXCreated.changed
+
+    - name: "Create the Mako Server's SharkTrustX configuration file mako.conf"
+      template:
+        src: "templates/SharkTrustX-mako-conf.j2"
+        dest: "/opt/SharkTrustX/mako.conf"
+        mode: '0644'
+      when: SharkTrustXCreated.changed
+
+    - name: Check out SharkTrustX {{GitSharkTrustX}}
+      ansible.builtin.git:
+        repo: "{{GitSharkTrustX}}"
+        dest: /opt/SharkTrustX/GIT-SharkTrustX
+      register: NewSharkTrustX
+
+    - name: Compress SharkTrustX
+      archive:
+        path:  /opt/SharkTrustX/GIT-SharkTrustX/www/
+        dest: /opt/SharkTrustX/SharkTrustX.zip
+        format: zip
+      notify: restart SharkTrustX
+      when: NewSharkTrustX.changed
+
+    - name: Download latest Mako Server using Curl
+      command: >
+        curl https://makoserver.net/download/mako.linux-x64.tar.gz
+          -sLR
+          -z  /usr/bin/mako
+          -w "%{response_code}"
+          -o /tmp/mako.linux-x64.tar.gz
+      args:
+        warn: no
+      register: newmako
+      failed_when: newmako.stdout not in ["200", "304"]
+      changed_when: newmako.stdout != "304"
+
+    - name: Unpack Mako Server
+      ansible.builtin.unarchive:
+        src: /tmp/mako.linux-x64.tar.gz
+        dest: /tmp
+        remote_src: yes
+      when: newmako.changed
+
+    - name: Copy Mako Server to /usr/bin directory
+      copy:
+        src: '/tmp/{{item}}'
+        remote_src: yes
+        dest: '/usr/bin'
+        owner: root
+        group: root
+        mode: a+xr
+      loop:
+        - mako
+        - mako.zip
+      when: newmako.changed
+
+    - name: Update time stamp for /usr/bin/mako
+      file:
+        path: /usr/bin/mako
+        state: touch
+      notify: restart SharkTrustX
+      when: newmako.changed
+
+    - name: "Create the SharkTrustX (Mako Server) systemd file"
+      template:
+        src: "templates/SharkTrustX-systemd.j2"
+        dest: "/etc/systemd/system/SharkTrustX.service"
+        mode: '0644'
+      when: newmako.changed
+
+    - name: Install SharkTrustX as a systemd process
+      systemd:
+        name: SharkTrustX
+        enabled: yes
+      when: newmako.changed
