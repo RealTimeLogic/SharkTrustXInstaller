@@ -66,6 +66,17 @@
         - 20auto-upgrades
         - 50unattended-upgrades
 
+    - name: Install iptables.
+      apt:
+        name: iptables
+        state: present
+
+    - name: Ensure iptables is running and enabled on boot.
+      service:
+        name: iptables
+        state: started
+        enabled: yes 
+
     - name: Install fail2ban.
       apt:
         name: fail2ban
