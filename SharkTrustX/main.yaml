@@ -24,6 +24,7 @@
         - lsof
         - git
         - nano
+        - dnsutils
 
     - name: Create /opt/SharkTrustX/
       file:
