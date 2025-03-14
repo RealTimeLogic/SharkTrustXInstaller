@@ -27,7 +27,7 @@ log={
       server = "{{ emailserver }}",
       port = {{ emailport }},
       useauth = true,
-      consec = "{{ emailport }}",
+      consec = "{{ emailconsec }}",
       user = "{{ emailuser }}",
       password = "{{ emailpassword }}",
    }
@@ -39,7 +39,6 @@ settings={
    ns2="{{ settingsns2 }}",
    dn="{{ settingsdn }}",
    acme={
-      production=true,
-      rsa=true
+      production=true
    }
 }

@@ -60,55 +60,69 @@
       notify: restart SharkTrustX
       when: NewSharkTrustX.changed
 
-    - name: Download latest Mako Server using Curl
-      command: >
-        curl https://makoserver.net/download/mako.linux-x64.tar.gz
-          -sLR
-          -z  /usr/bin/mako
-          -w "%{response_code}"
-          -o /tmp/mako.linux-x64.tar.gz
-      args:
-        warn: no
-      register: newmako
-      failed_when: newmako.stdout not in ["200", "304"]
-      changed_when: newmako.stdout != "304"
+    - name: Download and install Mako Server (only on 64-bit x86 Linux)
+      block:
+        - name: Download latest Mako Server using Curl
+          command: >
+            curl https://makoserver.net/download/mako.linux-x64.tar.gz
+              -sLR
+              -z  /usr/local/bin/mako
+              -w "%{response_code}"
+              -o /tmp/mako.linux-x64.tar.gz
+          args:
+            warn: no
+          register: newmako
+          failed_when: newmako.stdout not in ["200", "304"]
+          changed_when: newmako.stdout != "304"
 
-    - name: Unpack Mako Server
-      ansible.builtin.unarchive:
-        src: /tmp/mako.linux-x64.tar.gz
-        dest: /tmp
-        remote_src: yes
-      when: newmako.changed
+        - name: Unpack Mako Server
+          ansible.builtin.unarchive:
+            src: /tmp/mako.linux-x64.tar.gz
+            dest: /tmp
+            remote_src: yes
+          when: newmako.changed
 
-    - name: Copy Mako Server to /usr/bin directory
-      copy:
-        src: '/tmp/{{item}}'
-        remote_src: yes
-        dest: '/usr/bin'
-        owner: root
-        group: root
-        mode: a+xr
-      loop:
-        - mako
-        - mako.zip
-      when: newmako.changed
+        - name: Copy Mako Server to /usr/bin directory
+          copy:
+            src: '/tmp/{{item}}'
+            remote_src: yes
+            dest: '/usr/bin'
+            owner: root
+            group: root
+            mode: a+xr
+          loop:
+            - mako
+            - mako.zip
+          when: newmako.changed
 
-    - name: Update time stamp for /usr/bin/mako
-      file:
-        path: /usr/bin/mako
-        state: touch
-      notify: restart SharkTrustX
-      when: newmako.changed
+        - name: Update time stamp for /usr/local/bin/mako
+          file:
+            path: /usr/local/bin/mako
+            state: touch
+          notify: restart SharkTrustX
+          when: newmako.changed
+      when: ansible_architecture == "x86_64" and ansible_os_family == "Debian"
+
+    - name: Verify if Mako Server is installed when not on x86_64
+      block:
+        - name: Check if /usr/local/bin/mako exists
+          stat:
+            path: /usr/local/bin/mako
+          register: mako_check
+
+        - name: Fail if Mako Server is missing
+          fail:
+            msg: "Mako Server is required but not installed at /usr/local/bin/mako. Please install it manually."
+          when: not mako_check.stat.exists
+      when: ansible_architecture != "x86_64" or ansible_os_family != "Debian"
 
     - name: "Create the SharkTrustX (Mako Server) systemd file"
       template:
         src: "templates/SharkTrustX-systemd.j2"
         dest: "/etc/systemd/system/SharkTrustX.service"
         mode: '0644'
-      when: newmako.changed
 
     - name: Install SharkTrustX as a systemd process
       systemd:
         name: SharkTrustX
         enabled: yes
-      when: newmako.changed
