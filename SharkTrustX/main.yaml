@@ -62,18 +62,14 @@
 
     - name: Download and install Mako Server (only on 64-bit x86 Linux)
       block:
+
         - name: Download latest Mako Server using Curl
           command: >
-            curl https://makoserver.net/download/mako.linux-x64.tar.gz
-              -sLR
-              -z  /usr/local/bin/mako
-              -w "%{response_code}"
-              -o /tmp/mako.linux-x64.tar.gz
-          args:
-            warn: no
+            curl -sLR -z /usr/local/bin/mako -w "%{http_code}" -o /tmp/mako.linux-x64.tar.gz
+            https://makoserver.net/download/mako.linux-x64.tar.gz
           register: newmako
-          failed_when: newmako.stdout not in ["200", "304"]
-          changed_when: newmako.stdout != "304"
+          changed_when: "'304' not in newmako.stdout"
+          failed_when: "'200' not in newmako.stdout and '304' not in newmako.stdout"
 
         - name: Unpack Mako Server
           ansible.builtin.unarchive:
@@ -82,11 +78,11 @@
             remote_src: yes
           when: newmako.changed
 
-        - name: Copy Mako Server to /usr/bin directory
+        - name: Copy Mako Server to /usr/local/bin directory
           copy:
             src: '/tmp/{{item}}'
             remote_src: yes
-            dest: '/usr/bin'
+            dest: '/usr/local/bin'
             owner: root
             group: root
             mode: a+xr
