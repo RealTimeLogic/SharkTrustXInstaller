@@ -6,8 +6,13 @@ After=syslog.target network.target
 Type=simple
 User=root
 Group=root
+ExecStartPre=/bin/sh -c '[ -x /usr/local/bin/mako ] || (echo "Missing or not executable: /usr/local/bin/mako" >&2; exit 1)'
 WorkingDirectory=/opt/SharkTrustX
 ExecStart=/usr/local/bin/mako -s
+Restart=always
+RestartSec=3
+LimitNOFILE=200000
+SyslogIdentifier=SharkTrustX
 
 [Install]
 WantedBy=multi-user.target
