@@ -1,33 +1,52 @@
-
-
 ---
 
-#The username should be the same as 'onlineuser' set in ../NewMachine/vars.yaml
+# The username should be the same as onlineuser in ../NewMachine/vars.yaml.
 ansible_user: rtl
+ansible_python_interpreter: /usr/bin/python3
 
-# The portal owner and password
+# The Mako administration owner and password. Replace CHANGE_ME.
 rootuser: "admin"
-rootpwd: "qwerty"
-# password stored as HA1 = MD5(username ":" realm ":" password)
+rootpwd: "CHANGE_ME"
+# The password is stored as HA1 = MD5(username ":" realm ":" password).
 realm: "SharkTrust Service"
+# Existing mako.conf files are preserved unless this is explicitly true.
+replace_mako_conf: false
 
-# SharkTrustX name server settings
+# SharkTrustX name server settings.
 settingsns1: "nsex1.realtimelogic.com"
 settingsns2: "nsex2.realtimelogic.com"
 settingsdn: "sharktrustx.realtimelogic.com"
+# Set this when the server is behind NAT and automatic detection returns a
+# private address. Leave it empty on a directly connected public server.
+settingsip: ""
+settingsacmeproduction: true
+settingsacmersa: false
+settingsacmedomains: []
+settingsregauth: true
 
-# Log E-Mail settings
+# Log email settings.
 emailserver: "your-mail-server"
 emailport: 465
 # tls or starttls
 emailconsec: "tls"
 emailuser: "no-reply@realtimelogic.com"
-emailpassword: "password"
+emailpassword: "CHANGE_ME"
+emailuseauth: true
 emailsubject: "SharkTrustX Server"
 emailfrom: "no-reply@realtimelogic.com"
 emailto: "log-file-receiver"
 emailsignature: "Sent from SharkTrustX"
 
-# The SharkTrustX repository (or cloned repository)
+# The SharkTrustX repository and revision.
 GitSharkTrustX: https://github.com/RealTimeLogic/SharkTrustX.git
+GitSharkTrustXVersion: master
+SharkTrustXSourceDir: /opt/SharkTrustX-source
 
+# Leave empty to download mako_download_url. Set this to a controller-local
+# release archive when validating an unpublished Mako build.
+mako_local_archive: ""
+# Example after a compatible release is published:
+# mako_download_url: https://makoserver.net/download/mako.linux-x64.tar.gz
+mako_download_url: ""
+# Required value such as sha256:012345... for release validation.
+mako_archive_checksum: ""

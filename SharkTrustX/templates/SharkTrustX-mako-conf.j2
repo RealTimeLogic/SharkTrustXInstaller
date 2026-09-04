@@ -8,7 +8,7 @@ tracelogger = { auth=true }
 realm="{{ realm }}"
 
 users = { 
-   ["{{ rootuser }}"]={ "{{ rootuserha1.stdout }}" }
+   ["{{ rootuser }}"]={ "{{ rootuserha1.stdout.split()[0] }}" }
 }
 
 fileserver={
@@ -28,7 +28,7 @@ log={
       to = "{{ emailto }}",
       server = "{{ emailserver }}",
       port = {{ emailport }},
-      useauth = true,
+      useauth = {{ emailuseauth | bool | lower }},
       consec = "{{ emailconsec }}",
       user = "{{ emailuser }}",
       password = "{{ emailpassword }}",
@@ -40,9 +40,17 @@ settings={
    ns1="{{ settingsns1 }}",
    ns2="{{ settingsns2 }}",
    dn="{{ settingsdn }}",
-   --ip="", -- Set the public IP address if the server cannot auto detect
+{% if settingsip | length > 0 %}
+   ip={{ settingsip | to_json }},
+{% endif %}
    acme={
-      production=true
+      production={{ settingsacmeproduction | bool | lower }},
+      rsa={{ settingsacmersa | bool | lower }},
+      domains={
+{% for domain in settingsacmedomains %}
+         {{ domain | to_json }},
+{% endfor %}
+      }
    },
-   regauth=true -- Default: the zone registration page (/) requires authentication
+   regauth={{ settingsregauth | bool | lower }} -- Default: the zone registration page (/) requires authentication
 }
