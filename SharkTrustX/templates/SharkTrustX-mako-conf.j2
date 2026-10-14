@@ -1,14 +1,17 @@
+homeio='/opt/SharkTrustX'
+port=80
+sslport=443
 commandcnt=40 -- Reverse Connection Bridge requires many threads
 rtlprio=0 -- must be lower than the app's prio; required for the tracelogger
 apps = {
-   { prio=1, name='', path='SharkTrustX.zip'},
+   { prio=1, name='', path='/opt/SharkTrustX/SharkTrustX.zip'},
 }
 
 tracelogger = { auth=true }
-realm="{{ realm }}"
+realm={{ realm | to_json(ensure_ascii=False) }}
 
-users = { 
-   ["{{ rootuser }}"]={ "{{ rootuserha1.stdout.split()[0] }}" }
+users = {
+   [{{ rootuser | to_json(ensure_ascii=False) }}]={ "{{ rootuserha1.stdout.split()[0] }}" }
 }
 
 fileserver={
@@ -21,31 +24,37 @@ fileserver={
 
 log={
    logerr = true,
-   signature="{{ emailsignature }}",
+   signature={{ emailsignature | to_json(ensure_ascii=False) }},
    smtp={
-      subject="{{ emailsubject }}",
-      from = "{{ emailfrom }}",
-      to = "{{ emailto }}",
-      server = "{{ emailserver }}",
+      subject={{ emailsubject | to_json(ensure_ascii=False) }},
+      from = {{ emailfrom | to_json(ensure_ascii=False) }},
+      to = {{ emailto | to_json(ensure_ascii=False) }},
+      server = {{ emailserver | to_json(ensure_ascii=False) }},
       port = {{ emailport }},
       useauth = {{ emailuseauth | bool | lower }},
-      consec = "{{ emailconsec }}",
-      user = "{{ emailuser }}",
-      password = "{{ emailpassword }}",
+      consec = {{ emailconsec | to_json(ensure_ascii=False) }},
+      user = {{ emailuser | to_json(ensure_ascii=False) }},
+      password = {{ emailpassword | to_json(ensure_ascii=False) }},
    }
 }
 
 
 settings={
-   ns1="{{ settingsns1 }}",
-   ns2="{{ settingsns2 }}",
-   dn="{{ settingsdn }}",
+   ns1={{ settingsns1 | to_json(ensure_ascii=False) }},
+   ns2={{ settingsns2 | to_json(ensure_ascii=False) }},
+   dn={{ settingsdn | to_json(ensure_ascii=False) }},
 {% if settingsip | length > 0 %}
    ip={{ settingsip | to_json }},
 {% endif %}
    acme={
       production={{ settingsacmeproduction | bool | lower }},
       rsa={{ settingsacmersa | bool | lower }},
+{% if settingsacmeproductionurl | length > 0 %}
+      productionUrl={{ settingsacmeproductionurl | to_json(ensure_ascii=False) }},
+{% endif %}
+{% if settingsacmestagingurl | length > 0 %}
+      stagingUrl={{ settingsacmestagingurl | to_json(ensure_ascii=False) }},
+{% endif %}
       domains={
 {% for domain in settingsacmedomains %}
          {{ domain | to_json }},

@@ -1,11 +1,20 @@
 ---
-- hosts: all
+- name: Install SharkTrustX on a dedicated Debian or Ubuntu server
+  hosts: all
   become: true
 
   vars_files:
     - vars.yaml
 
   pre_tasks:
+    - name: Verify the supported platform
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == 'Debian'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_facts.service_mgr == 'systemd'
+        fail_msg: This installer requires x86-64 Debian or Ubuntu with systemd.
+
     - name: Check for an existing SharkTrustX configuration
       ansible.builtin.stat:
         path: /opt/SharkTrustX/mako.conf
@@ -17,7 +26,7 @@
           - settingsns1 | length > 0
           - settingsns2 | length > 0
           - settingsdn | length > 0
-          - GitSharkTrustX | length > 0
+          - portal_local_archive | length > 0 or GitSharkTrustX | length > 0
           - mako_local_archive | length > 0 or mako_download_url | length > 0
           - mako_archive_checksum is match('^sha256:[0-9a-fA-F]{64}$')
         fail_msg: Configure the portal and a SHA-256-verified Mako release in vars.yaml.
@@ -29,11 +38,29 @@
           - rootpwd | length >= 12
           - rootpwd not in ['qwerty', 'CHANGE_ME']
           - realm | length > 0
-          - emailserver | length > 0
-          - not emailuseauth or (emailuser | length > 0 and emailpassword not in ['password', 'CHANGE_ME'])
+          - emailserver | length > 0 and emailserver != 'your-mail-server'
+          - emailto is match('^[^@\\s]+@[^@\\s]+$')
+          - emailfrom is match('^[^@\\s]+@[^@\\s]+$')
+          - emailport | int > 0 and emailport | int <= 65535
+          - emailconsec in ['tls', 'starttls']
+          - not emailuseauth or (emailuser | length > 0 and emailpassword | length > 0 and emailpassword not in ['password', 'CHANGE_ME'])
         fail_msg: Replace the credential and email placeholders before creating mako.conf.
       no_log: true
       when: not sharktrustx_config.stat.exists or replace_mako_conf
+
+    - name: Verify that a retained configuration loads the installed portal package
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import pathlib, re
+            text = pathlib.Path('/opt/SharkTrustX/mako.conf').read_text()
+            pattern = r"path\s*=\s*['\"](?:/opt/SharkTrustX/)?SharkTrustX\.zip['\"]"
+            if not re.search(pattern, text):
+                raise SystemExit('Retained mako.conf must load SharkTrustX.zip. Set replace_mako_conf=true after reviewing vars.yaml.')
+      changed_when: false
+      when: sharktrustx_config.stat.exists and not replace_mako_conf
 
     - name: Update apt cache if needed
       ansible.builtin.apt:
@@ -41,25 +68,49 @@
         cache_valid_time: 3600
 
   handlers:
+    - name: restart named
+      ansible.builtin.systemd_service:
+        name: named
+        state: restarted
+
     - name: restart SharkTrustX
       ansible.builtin.systemd_service:
         name: SharkTrustX
         state: restarted
         daemon_reload: true
+      when: start_portal | bool
 
   tasks:
     - name: Install required packages
       ansible.builtin.apt:
         pkg:
           - bind9
-          - curl
-          - dnsutils
+          - bind9-utils
+          - bind9-dnsutils
+          - ca-certificates
+          - coreutils
           - git
-          - lsof
-          - nano
+          - libc-bin
+          - python3
+          - tar
           - unzip
-          - whois
+          - util-linux
         state: present
+
+    - name: Configure and verify authoritative DNS
+      ansible.builtin.import_tasks: bind.yaml
+
+    - name: Check for an existing portal service
+      ansible.builtin.stat:
+        path: /etc/systemd/system/SharkTrustX.service
+      register: portal_unit
+
+    - name: Stop the portal when start_portal is false
+      ansible.builtin.systemd_service:
+        name: SharkTrustX
+        state: stopped
+        enabled: false
+      when: portal_unit.stat.exists and not (start_portal | bool)
 
     - name: Create the SharkTrustX runtime directory
       ansible.builtin.file:
@@ -101,8 +152,16 @@
         group: root
         mode: '0600'
         backup: "{{ replace_mako_conf }}"
+      no_log: true
       notify: restart SharkTrustX
       when: not sharktrustx_config.stat.exists or replace_mako_conf
+
+    - name: Protect the retained Mako configuration
+      ansible.builtin.file:
+        path: /opt/SharkTrustX/mako.conf
+        owner: root
+        group: root
+        mode: '0600'
 
     - name: Check out SharkTrustX
       ansible.builtin.git:
@@ -111,6 +170,7 @@
         dest: "{{ SharkTrustXSourceDir }}"
         update: true
       register: new_sharktrustx
+      when: portal_local_archive | length == 0
 
     - name: Check for an installed portal package
       ansible.builtin.stat:
@@ -125,9 +185,16 @@
         owner: root
         group: root
         mode: '0644'
-      when: new_sharktrustx.changed or not sharktrustx_package.stat.exists
+      when: portal_local_archive | length == 0 and (new_sharktrustx.changed or not sharktrustx_package.stat.exists)
 
-    - name: Validate the staged SharkTrustX package
+    - name: Stage a controller-provided portal package
+      ansible.builtin.copy:
+        src: "{{ portal_local_archive }}"
+        dest: /tmp/SharkTrustX.zip.new
+        mode: '0644'
+      when: portal_local_archive | length > 0
+
+    - name: Validate the selected SharkTrustX package
       ansible.builtin.command:
         argv:
           - python3
@@ -147,11 +214,14 @@
                 names = set(package.namelist())
                 missing = sorted(required - names)
                 corrupt = package.testzip()
+                preload = package.read('.preload').decode('utf-8')
+                validation = package.read('.lua/www/admin/validate.html').decode('utf-8')
+                if 'local function bindAccess(' not in preload or 'local function checkDNS(' not in validation:
+                    raise SystemExit('Portal needs the BIND permissions and DNS delegation fixes.')
             if missing or corrupt:
                 raise SystemExit('invalid portal package: missing=%r corrupt=%r' % (missing, corrupt))
-          - /tmp/SharkTrustX.zip.new
+          - "{{ '/tmp/SharkTrustX.zip.new' if (portal_local_archive | length > 0 or new_sharktrustx.changed or not sharktrustx_package.stat.exists) else '/opt/SharkTrustX/SharkTrustX.zip' }}"
       changed_when: false
-      when: new_sharktrustx.changed or not sharktrustx_package.stat.exists
 
     - name: Install the validated SharkTrustX package
       ansible.builtin.copy:
@@ -161,8 +231,9 @@
         owner: root
         group: root
         mode: '0644'
+        backup: true
       notify: restart SharkTrustX
-      when: new_sharktrustx.changed or not sharktrustx_package.stat.exists
+      when: portal_local_archive | length > 0 or new_sharktrustx.changed or not sharktrustx_package.stat.exists
 
     - name: Remove the staged SharkTrustX package
       ansible.builtin.file:
@@ -181,7 +252,7 @@
         url: "{{ mako_download_url }}"
         dest: /tmp/mako.linux-x64.tar.gz
         mode: '0644'
-        checksum: "{{ mako_archive_checksum if mako_archive_checksum | length > 0 else omit }}"
+        checksum: "{{ mako_archive_checksum | lower }}"
       when: mako_local_archive | length == 0
 
     - name: Hash the staged Mako release
@@ -194,51 +265,62 @@
       ansible.builtin.assert:
         that:
           - mako_archive_stat.stat.exists
-          - mako_archive_checksum | length == 0 or mako_archive_checksum == 'sha256:' ~ mako_archive_stat.stat.checksum
+          - mako_archive_checksum | lower == 'sha256:' ~ mako_archive_stat.stat.checksum
         fail_msg: The staged Mako release does not match mako_archive_checksum.
 
-    - name: Create the Mako staging directory
-      ansible.builtin.file:
-        path: /tmp/SharkTrustX-mako-stage
+    - name: Create a private Mako staging directory
+      ansible.builtin.tempfile:
         state: directory
-        owner: root
-        group: root
-        mode: '0750'
+        prefix: SharkTrustX-mako-
+      register: mako_stage
 
-    - name: Unpack the staged Mako release
-      ansible.builtin.unarchive:
-        src: /tmp/mako.linux-x64.tar.gz
-        dest: /tmp/SharkTrustX-mako-stage
-        remote_src: true
-      changed_when: false
-      when: ansible_facts['architecture'] == 'x86_64' and ansible_facts['os_family'] == 'Debian'
+    - name: Validate and install the Mako release
+      block:
+        - name: Unpack the staged Mako release
+          ansible.builtin.unarchive:
+            src: /tmp/mako.linux-x64.tar.gz
+            dest: "{{ mako_stage.path }}"
+            remote_src: true
+          changed_when: false
 
-    - name: Install Mako Server runtime files
-      ansible.builtin.copy:
-        src: "/tmp/SharkTrustX-mako-stage/{{ item.name }}"
-        dest: "/usr/local/bin/{{ item.name }}"
-        remote_src: true
-        owner: root
-        group: root
-        mode: "{{ item.mode }}"
-      loop:
-        - { name: mako, mode: '0755' }
-        - { name: mako.zip, mode: '0644' }
-      notify: restart SharkTrustX
-      when: ansible_facts['architecture'] == 'x86_64' and ansible_facts['os_family'] == 'Debian'
+        - name: Disable listeners for the runtime capability check
+          ansible.builtin.copy:
+            content: "port=0\nsslport=0\ntracelogger=false\n"
+            dest: "{{ mako_stage.path }}/mako.conf"
+            mode: '0600'
 
-    - name: Verify Mako Server is installed on other platforms
-      ansible.builtin.stat:
-        path: /usr/local/bin/mako
-      register: mako_check
-      when: ansible_facts['architecture'] != 'x86_64' or ansible_facts['os_family'] != 'Debian'
+        - name: Stage the runtime capability check
+          ansible.builtin.copy:
+            src: files/check-runtime.lua
+            dest: "{{ mako_stage.path }}/check-runtime.lua"
+            mode: '0600'
 
-    - name: Fail when Mako Server is missing on other platforms
-      ansible.builtin.fail:
-        msg: Mako Server is required at /usr/local/bin/mako. Install it manually or provide a supported installer task.
-      when:
-        - ansible_facts['architecture'] != 'x86_64' or ansible_facts['os_family'] != 'Debian'
-        - not mako_check.stat.exists
+        - name: Check the staged Mako executable and resources without network requests
+          ansible.builtin.command:
+            argv:
+              - "{{ mako_stage.path }}/mako"
+              - check-runtime.lua
+            chdir: "{{ mako_stage.path }}"
+          changed_when: false
+
+        - name: Install Mako Server runtime files
+          ansible.builtin.copy:
+            src: "{{ mako_stage.path }}/{{ item.name }}"
+            dest: "/usr/local/bin/{{ item.name }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "{{ item.mode }}"
+            backup: true
+          loop:
+            - { name: mako, mode: '0755' }
+            - { name: mako.zip, mode: '0644' }
+          notify: restart SharkTrustX
+      always:
+        - name: Remove the private Mako staging directory
+          ansible.builtin.file:
+            path: "{{ mako_stage.path }}"
+            state: absent
 
     - name: Install the SharkTrustX systemd unit
       ansible.builtin.template:
@@ -252,11 +334,11 @@
     - name: Apply pending SharkTrustX restarts
       ansible.builtin.meta: flush_handlers
 
-    - name: Enable and start SharkTrustX
+    - name: Apply the requested SharkTrustX service state
       ansible.builtin.systemd_service:
         name: SharkTrustX
-        enabled: true
-        state: started
+        enabled: "{{ start_portal | bool }}"
+        state: "{{ 'started' if (start_portal | bool) else 'stopped' }}"
         daemon_reload: true
 
     - name: Wait for SharkTrustX HTTPS
@@ -264,6 +346,7 @@
         host: 127.0.0.1
         port: 443
         timeout: 60
+      when: start_portal | bool
 
     - name: Verify SharkTrustX is active
       ansible.builtin.command:
@@ -273,3 +356,4 @@
           - --quiet
           - SharkTrustX.service
       changed_when: false
+      when: start_portal | bool

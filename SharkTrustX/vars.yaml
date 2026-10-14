@@ -22,6 +22,9 @@ settingsip: ""
 settingsacmeproduction: true
 settingsacmersa: false
 settingsacmedomains: []
+# Optional HTTPS ACME directories for a compatible CA.
+settingsacmeproductionurl: ""
+settingsacmestagingurl: ""
 settingsregauth: true
 
 # Log email settings.
@@ -36,6 +39,11 @@ emailsubject: "SharkTrustX Server"
 emailfrom: "no-reply@realtimelogic.com"
 emailto: "log-file-receiver"
 emailsignature: "Sent from SharkTrustX"
+
+# Start and enable the service after installation. False leaves it stopped.
+start_portal: true
+# Optional controller-local ZIP with www CONTENTS at its root.
+portal_local_archive: ""
 
 # The SharkTrustX repository and revision.
 GitSharkTrustX: https://github.com/RealTimeLogic/SharkTrustX.git
